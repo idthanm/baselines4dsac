@@ -97,6 +97,8 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         network_type = network
         policy_network_fn = get_network_builder(network_type)(**network_kwargs)
         network = policy_network_fn(ob_space.shape)
+    else:
+        network = network(ob_space.shape)
 
     # Calculate the batch_size
     nbatch = nenvs * nsteps
