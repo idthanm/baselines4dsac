@@ -1,8 +1,9 @@
-import sys
+import sys, os
 import re
 import multiprocessing
 import os.path as osp
 import gym
+import json, datetime
 from collections import defaultdict
 import tensorflow as tf
 
@@ -64,6 +65,8 @@ def train(args, extra_args):
     alg_kwargs.update(extra_args)
 
     env = build_env(args)
+    eval_env = build_env(args)
+
     if args.save_video_interval != 0:
         env = VecVideoRecorder(env, osp.join(logger.get_dir(), "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
 
@@ -77,7 +80,9 @@ def train(args, extra_args):
 
     model = learn(
         env=env,
+        eval_env=eval_env,
         seed=seed,
+        log_path=args.log_path,
         total_timesteps=total_timesteps,
         **alg_kwargs
     )
@@ -108,8 +113,8 @@ def build_env(args):
         flatten_dict_observations = alg not in {'her'}
         env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations)
 
-        if env_type == 'mujoco':
-            env = VecNormalize(env)
+        # if env_type == 'mujoco':
+        #     env = VecNormalize(env)
 
     return env
 
@@ -201,6 +206,12 @@ def main(args):
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
+    time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    log_path = './results/{alg}/experiment-{time}'.format(alg=args.alg, time=time_now)
+    os.makedirs(log_path)
+    args.log_path = log_path
+    with open(args.log_path + '/config.json', 'w', encoding='utf-8') as f:
+        json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0

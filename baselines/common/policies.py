@@ -39,6 +39,13 @@ class PolicyWithValue(tf.Module):
             self.value_fc = fc(self.value_network.output_shape, 'vf', 1)
 
     @tf.function
+    def mode(self, observation):
+        latent = self.policy_network(observation)
+        pd, pi = self.pdtype.pdfromlatent(latent)
+        mode = pd.mode()
+        return mode
+
+    @tf.function
     def step(self, observation):
         """
         Compute next action(s) given the observation(s)

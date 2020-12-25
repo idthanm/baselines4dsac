@@ -3,6 +3,7 @@ from baselines import logger
 import baselines.common.tf_util as U
 import tensorflow as tf, numpy as np
 import time
+import os
 import os.path as osp
 from baselines.common import colorize
 from collections import deque
@@ -13,6 +14,7 @@ from baselines.common.cg import cg
 from baselines.common.policies import PolicyWithValue
 from baselines.common.vec_env.vec_env import VecEnv
 from contextlib import contextmanager
+from baselines.evaluator import Evaluator
 
 try:
     from mpi4py import MPI
@@ -99,6 +101,7 @@ def add_vtarg_and_adv(seg, gamma, lam):
 def learn(*,
         network,
         env,
+        eval_env,
         total_timesteps,
         timesteps_per_batch=1024, # what to train on
         max_kl=0.001,
@@ -110,6 +113,7 @@ def learn(*,
         cg_damping=1e-2,
         vf_stepsize=3e-4,
         vf_iters =3,
+        log_path=None,
         max_episodes=0, max_iters=0,  # time constraint
         callback=None,
         load_path=None,
@@ -319,6 +323,22 @@ def learn(*,
     lenbuffer = deque(maxlen=40) # rolling buffer for episode lengths
     rewbuffer = deque(maxlen=40) # rolling buffer for episode rewards
 
+    logdir = log_path + '/evaluator'
+    modeldir = log_path + '/models'
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+    if not os.path.exists(modeldir):
+        os.makedirs(modeldir)
+    evaluator = Evaluator(env=eval_env, model=pi, logdir=logdir)
+    max_inner_iter = 500000 if env.spec.id == 'InvertedDoublePendulum-v2' else 3000000
+    epoch = vf_iters
+    batch_size = timesteps_per_batch
+    mb_size = 256
+    inner_iter_per_iter = epoch * int(batch_size / mb_size)
+    max_iter = int(max_inner_iter / inner_iter_per_iter)
+    eval_num = 150
+    eval_interval = save_interval = int(int(max_inner_iter / eval_num) / inner_iter_per_iter)
+
     if sum([max_iters>0, total_timesteps>0, max_episodes>0])==0:
         # noththing to be done
         return pi
@@ -326,15 +346,20 @@ def learn(*,
     assert sum([max_iters>0, total_timesteps>0, max_episodes>0]) < 2, \
         'out of max_iters, total_timesteps, and max_episodes only one should be specified'
 
-    while True:
+    for update in range(1, max_iter+1):
         if callback: callback(locals(), globals())
-        if total_timesteps and timesteps_so_far >= total_timesteps:
-            break
-        elif max_episodes and episodes_so_far >= max_episodes:
-            break
-        elif max_iters and iters_so_far >= max_iters:
-            break
+        # if total_timesteps and timesteps_so_far >= total_timesteps:
+        #     break
+        # elif max_episodes and episodes_so_far >= max_episodes:
+        #     break
+        # elif max_iters and iters_so_far >= max_iters:
+        #     break
         logger.log("********** Iteration %i ************"%iters_so_far)
+        if (update-1) % eval_interval == 0:
+            evaluator.run_evaluation(update-1)
+        if (update - 1) % save_interval == 0:
+            ckpt = tf.train.Checkpoint(model=pi)
+            ckpt.save(modeldir + '/ckpt_ite' + str((update-1)))
 
         with timed("sampling"):
             seg = seg_gen.__next__()
@@ -404,7 +429,7 @@ def learn(*,
 
             for _ in range(vf_iters):
                 for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
-                include_final_partial_batch=False, batch_size=64):
+                include_final_partial_batch=False, batch_size=mb_size):
                     mbob = sf01(mbob)
                     g = allmean(compute_vflossandgrad(mbob, mbret).numpy())
                     vfadam.update(g, vf_stepsize)

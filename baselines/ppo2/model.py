@@ -32,6 +32,7 @@ class Model(tf.Module):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.step = self.train_model.step
+        self.mode = self.train_model.mode
         self.value = self.train_model.value
         self.initial_state = self.train_model.initial_state
         self.loss_names = ['policy_loss', 'value_loss', 'policy_entropy', 'approxkl', 'clipfrac']
