@@ -1,13 +1,13 @@
 def mujoco():
     return dict(
         nsteps=2048,
-        nminibatches=32,
+        nminibatches=8,
         lam=0.95,
         gamma=0.99,
         noptepochs=10,
         log_interval=1,
         ent_coef=0.0,
-        lr=lambda f: 3e-4 * f,
+        lr=lambda f: 5e-5 * f,
         cliprange=0.2,
         #value_network='copy'
     )
